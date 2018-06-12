@@ -1,0 +1,31 @@
+#Menu{
+  height:60px;
+  background-color:#662200;
+}
+#navlist {
+  margin:0;
+  padding:0;
+}
+#Menu li{
+  list-style-type:none;
+  float:left;
+  display:block;
+  width:200px;
+  height:60px;
+  text-align: center;
+  line-height:55px;
+  font-family:Geneva;
+  font-size:25px;
+  }
+#Menu li a{
+  text-decoration:none;
+  color:white;
+  }
+#Menu li:Hover{
+  background-color:#992200;
+}
+
+#Menu li:active {
+    background-color: #999900;
+    color: white;
+}
