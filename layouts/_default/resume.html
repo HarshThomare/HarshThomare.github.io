@@ -10,22 +10,34 @@
       padding: 0;
       width: 100%;
       height: 100%;
-      overflow: hidden;
       background: #1a1a1a;
+      color: #eee;
+      font-family: system-ui, sans-serif;
+    }
+
+    .bar {
+      margin: 0;
+      padding: 10px 16px;
+      background: #111;
+      font-size: 14px;
+    }
+
+    .bar a {
+      color: #8be9fd;
     }
 
     iframe {
       display: block;
       width: 100%;
-      height: 100%;
+      height: calc(100% - 38px);
       border: 0;
+      background: #fff;
     }
   </style>
 </head>
 <body>
-  <iframe
-    src="{{ (strings.TrimPrefix "/" (.Params.pdf | default "pdf/Harsh_Thomare_resume-2.pdf")) | absURL }}"
-    title="{{ .Title }}"
-  ></iframe>
+  {{- $pdf := (.Params.pdf | default "pdf/Harsh_Thomare_CV.pdf") | relURL -}}
+  <p class="bar"><a href="{{ $pdf }}">Download CV (PDF)</a></p>
+  <iframe src="{{ $pdf }}" title="{{ .Title }}"></iframe>
 </body>
 </html>

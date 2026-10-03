@@ -1,32 +1,51 @@
 ---
-title: "The Program the Decompiler Is Not Looking At"
-date: 2026-10-02
+title: "Flexo and weird programs leave a copy-paste signature"
+date: 2026-04-08
 draft: false
 categories: ["Architecture", "Security"]
-tags: ["microarchitecture", "decompilation", "speculation", "weird machines"]
-summary: "Some programs compute in the cache and the branch predictor, during a window the architectural instruction stream never commits. A decompiler that checks the architectural state is looking at the wrong machine."
-description: "Two stripped substrates, one in the cache and one in the BTB, and why architectural equivalence is the wrong equivalence for them."
+tags: ["microarchitecture", "Flexo", "weird machines", "speculation"]
+summary: "The weird machines I am trying to recover leave a repeated gate in the binary. Static matching finds the copies, and one executed run is what tells me which of them actually fired."
+description: "A note on automating analysis of Flexo and weird programs: the reused gates are visible, and an execution is the check."
 ---
 
-I had a C rendering of a short fragment in front of me: a handful of loads, a compare on a timed read, and an exclusive-or that matched the binary on registers and memory. Because the C matched the assembly, I assumed the decompiler had done its job. I now think that assumption was wrong, and the reason is that agreement on registers and memory is the right check for ordinary functions and the wrong check for fragments like this one. In these fragments the program is which cache line was touched, or which predictor entry held a value, in a window that the architectural machine cancelled.
+I am currently working on automating the analysis of weird machines. The main thing I have noticed is that the published constructions leave a strong static signature. Static matching can propose the gates, and an executed copy is what confirms which of them fired.
 
-The name for the job I had assumed was finished is in Edward J. Schwartz's [Some Rough Thoughts on Verification of Decompilation](https://edmcman.github.io/blog/2026-09-22--on-verification-of-decompilation/). He argues for contextual equivalence: two functions are equivalent when no surrounding program can tell them apart. This is the right notion for ordinary functions because it throws away register choice and stack-slot choice, which no caller can observe. He also points out a circularity. To state the equivalence at the level of C you need a prototype, and at the level of the binary the prototype is often taken from the very decompilation you are trying to check.
+It is not 100 percent. Weird machines fail some of the time. A gate that is really in the binary can miss on a given run. The speculation window does not open, the predictor was not primed, or the timing threshold is on the wrong side of the noise. So a quiet gate in one run does not tell me the gate is absent.
 
-I co-authored HELIOS (arXiv:2601.14598), which gives a language model the control-flow graph and the call graph of a binary instead of a flat decompilation, on the idea that a function is better understood by what calls it and where its branches go. Control-flow context remains the right context for ordinary functions. This essay is about the limit of that approach, and it is not a benchmark. For the programs below the control-flow graph is a dull and misleading object, because the program is not located in it.
+This is a note on work in progress. I have not finished the tool.
 
-I also work with the UCLA Security Lab on transient-execution programs. That work is unpublished and serves here only as motivation. The two fragments I will describe are called Flexo and TAE. Thomas Dullien's term for a computing substrate that is not the machine the ISA description suggests is a weird machine. Flexo computes in the cache. TAE computes in the branch predictor.
+## Two weird machines I have been reading
 
-## The program is which line was touched
+The first is [Flexo](https://github.com/joeywang4/Flexo), the cache substrate. The compiler is in that repository, and the paper is Ping-Lun Wang, Riccardo Paccagnella, Riad S. Wahby, and Fraser Brown, ["Bending microarchitectural weird machines towards practicality"](https://www.usenix.org/conference/usenixsecurity24/presentation/wang-ping-lun), USENIX Security 2024. Flexo stores a bit in cache residency and computes with transient gates. It uses differential encoding, so one bit takes two cache lines.
+
+The second is [Weird Programs](https://github.com/joeywang4/Weird-Programs), the branch-target-buffer substrate. The paper is Ping-Lun Wang, Fraser Brown, Riccardo Paccagnella, Eyal Ronen, Riad S. Wahby, and Yuval Yarom, ["Transient Architectural Execution: From Weird Gates to Weird Programs"](https://www.cs.cmu.edu/~rpaccagn/papers/transient-architectural-execution-sp2026.pdf). The paper calls this construction TAE, so I use that name below too. A value lives in a BTB target. The register file is a row of identical indirect jumps.
+
+The two look different at the microarchitecture level. In the binaries they look alike, because both are generated by a compiler that stamps out the same gate over and over.
+
+## The copies in the pictures
+
+Look at the first plot for the bright rectangle at the lower right. Then look at the table below it for the three-part shape.
 
 <figure>
-  <img src="/images/flexo-split.svg" alt="A division chain leaves a 512-byte disagreement between the stacked return address and the return predictor. Stores in that gap run only on the predicted path. A timed load observes the cache.">
-  <figcaption>Flexo. The stack and the return predictor disagree by 512 bytes, the remainder of the division chain. The stores sit in the gap. The timed load is how the gap reports a result.</figcaption>
+  <img src="/images/flexo-self-similarity.png" alt="Self-similarity of a Flexo text section. A bright grid in the lower right is a block of nearly identical gates.">
+  <figcaption>Self-similarity of a Flexo .text, in 32-byte blocks. The bright boxes at the lower right are the reused gates: the same gate body copied over and over. The diagonal streaks above them are the delay and padding, repeating on a different stride.</figcaption>
 </figure>
 
-The fragment begins with a short chain of unsigned 16-bit divisions. On first reading this looks like arithmetic that is part of the work, but the chain is a delay. I evaluated the five divisions on the immediates that appear in the fragment. Every quotient fits in 16 bits, and the final remainder is 0x200, which is 512.
+<figure>
+  <img src="/images/weird-flow.png" alt="A table of decode, trigger, and body for Flexo and for TAE, taken from stripped binaries.">
+  <figcaption>The same three rows show up in both substrates. Decode is the timed load and the predicate. Trigger opens the speculation window. Body is the transient work. Flexo races store addresses. Weird programs race a delayed indirect branch.</figcaption>
+</figure>
+
+The lower-right boxes are the reused gates. That is why a static pass has something to find. The compiler emitted the same body many times, so a self-similarity plot lights up a rectangle. A gate template, or a hash of those 32-byte blocks, proposes candidates. The black bands are the pieces that are not copies: the trigger, the oracle, and the padding that spaces the copies out.
+
+Both columns of the second figure have the same three-part shape, which is the other signature. Decode reads the timer and applies a predicate. Trigger opens a speculation window. Body does the transient work inside it. Once I know the three parts, I can look for each one on its own.
+
+### Flexo trigger
+
+Here is the trigger from a Flexo binary.
 
 ```nasm
-; Flexo trigger. Remainder of this chain is 0x200.
+; Flexo trigger. The division chain is a delay. Remainder is 0x200.
 1180:  mov    $0x3a99,%rcx
 1187:  mov    $0x54d3,%rax
 118e:  mov    $0x1c98,%rdx
@@ -36,131 +55,51 @@ The fragment begins with a short chain of unsigned 16-bit divisions. On first re
 119e:  div    %cx
 11a1:  div    %cx
 11a4:  add    %rdx,(%rsp)     ; stacked return address += remainder
-11a8:  ret                   ; RSB and stack disagree
+11a8:  ret                   ; predictor and stack disagree
 ```
 
-That remainder is added to the return address on the stack. The reason this matters is that the return predictor is a separate piece of state from the stack, and it still holds the fall-through of the call. So the processor has two opinions about where the return goes. The predictor says the instruction after the call. The stack, once the division chain has finished and the addition has been made, says 512 bytes later. That target lies inside a run of padding, past a handful of stores. This disagreement between a return predictor and the stack is the shape known from Spectre-RSB and Retbleed.
+There are five 16-bit divisions, and the remainder is 0x200. That remainder is added to the return address on the stack. The return predictor still holds the fall-through address. The stores in the gap run only on the predicted path, and their addresses are the input bytes. There is no branch on the input. The architectural machine lands in the nop padding and carries on as if nothing happened.
 
-The remainder is therefore the skip. The architectural machine jumps over the stores and lands in padding. The predicted path does not jump over them, and it is the predicted path that executes the stores.
+The five `div` instructions in a row are easy to match. So is the `add %rdx,(%rsp)` followed by `ret`.
 
-```nasm
-; Gate body. No branch on the input. The stores are the transient path.
-2cfd:  call   1180
-2d02:  movzbq (%rdi),%rdi
-2d06:  movzbq (%rsi),%rsi
-2d0a:  movzbq (%r8),%r8
-2d0e:  movzbq (%r9),%r9
-2d12:  lea    (%rbx,%rsi,1),%r10
-2d16:  mov    0x100(%r10,%r9,1),%r10b
-2d1e:  mov    0x100(%r11,%r8,1),%r10b
-2d26:  mov    0x100(%r11,%rdi,1),%r10b
-2d2e:  nop
-       ; about 500 nops of padding follow
-```
+### Flexo decode
 
-The call's fall-through is the first `movzbq`, at `2d02`. Adding the remainder puts the architectural target at `2f02`. The stores sit at `2d16` through `2d26`, and the padding begins at `2d2e`, so `2f02` is inside the padding, past the stores.
-
-When the disagreement is resolved, the processor discards those stores. They never commit, and no register or memory location records them. Their effect on the cache can remain. Notice what this does to the input. There is no conditional branch on it anywhere. The input bytes are loaded and then used as store addresses, and the loaded values are thrown away. The one thing that differs between two inputs is which cache line was touched.
-
-A later fragment turns that into something a program can read.
+The decode side is a timed load.
 
 ```nasm
 2cc0:  rdtscp
 2ccc:  mov    (%rdi),%al
 2cce:  rdtscp
-2cd7:  sub    %rsi,%rdx
+2cd7:  sub    %rsi,%rdx       ; delta cycles
 ```
 
-It times one load, reading a serializing cycle counter before and after, and subtracts. The wrapper below compares that difference with 181. That comparison is how a cache effect becomes a bit. A line that was touched is fast, and a line that was not touched is slow, and the threshold is where one side of that is called one and the other zero.
+The wrapper compares the delta with 0xb5, which is 181 cycles. It reduces a dual-rail pair with xor. The pair is the reason one hot line does not decide the bit. The two rails sit 0x240 bytes apart, 576 in decimal, and that stride comes from an `imul $0x240`. That immediate is a search hit. I can grep a stripped binary for it and land near the decode wrappers.
 
-A single timed line would be a fragile thing to depend on, since a line can be hot for reasons that have nothing to do with the input.
+### Weird programs write
 
-```nasm
-12ce:  movb   $0x0,(%r9,%rcx,1)   ; touch a line when the input bit says so
-12d9:  clflush (%rcx)             ; flush the other line of the pair
-12e3:  imul   $0x240,%rcx,%r11    ; stride between the two rails
-1387:  mfence
-138a:  call   2cf0
-1393:  mfence
-1396:  call   2cc0                ; timed load
-139f:  cmp    $0xb5,%rax          ; 181-cycle threshold
-13a5:  setb   %al
-13c0:  xor    %dl,%al             ; reduce the pair
-13c2:  xor    $0xff,%al
-13de:  mov    %dl,(%rcx)          ; architectural sink
-```
-
-Each input is a pair of lines. The code treats the two lines differently, writing one and invalidating the other, and it combines the two timed results with exclusive-or. This is dual-rail: the bit is the comparison of the two timings, so a single line being hot for an unrelated reason does not decide the result. The pair is what makes the bit about this input. The reduced bit is then stored, and that store is the only architectural sink in the whole fragment.
-
-### The recovered C is not the program
-
-An architectural lifter looking at this sees a division, a stack store, a return, and a block that the return does not architecturally reach. A lifter that follows only architectural successors can drop that block as dead code, and by its own account of the machine it is right to do so. A lifter that keeps the block has no way to say that the block is the computation. The padding looks like padding. The timing compare looks like a badly written benchmark. Recovering the compare and the exclusive-or is recovering the readout, not the program.
-
-The C can be contextually equivalent to the binary on the ISA machine, in the sense that no architectural caller can tell them apart, and still not be the program. The program is which line was touched in a window that the architectural machine cancelled. The language of the decompilation has no type for "which line moved."
-
-HELIOS would get a dull control-flow graph for this fragment: a call, straight-line memory operations, padding, and a return. Nothing in that graph is wrong. The graph is not where the program is.
-
-## The value lived in a predictor entry
-
-TAE moves the substrate from the cache to the branch predictor.
-
-<figure>
-  <img src="/images/tae-btb.svg" alt="Identical indirect jumps sit every 32 bytes. A write records a target at a table plus five times a value. A square-root delay keeps the architectural pointer unresolved, so the call follows the predicted target.">
-  <figcaption>TAE. The stored value is a predicted target. The square-root chain exists so the architectural target is not ready while that prediction is used.</figcaption>
-</figure>
-
-TAE contains 1024 identical indirect jumps, one every 32 bytes. The padding is what makes them the same shape, so that they differ only in where they sit.
+The write in TAE encodes `val * 5`.
 
 ```nasm
-46c0:  jmp    *%rbx
-46c2:  ; 30 bytes of nop padding
-46e0:  jmp    *%rbx
-46e2:  ; 30 bytes of nop padding
-4700:  jmp    *%rbx
-       ; 1024 copies, every 0x20 bytes
-```
-
-A write computes the value times 5 and adds a table base. It puts that address in the register the stub will jump through, then calls the stub, and the predictor records the pair: this stub, that target. The delay loop that follows is a delay.
-
-```nasm
-2118:  lea    (%rax,%rax,4),%ecx   ; ecx = val * 5
-211b:  add    <decode_table>,%rcx  ; target = table + val * 5
+2118:  lea    (%rax,%rax,4),%ecx  ; ecx = val * 5
+211b:  add    <decode_table>,%rcx
 2129:  mov    %rcx,%rbx
-212c:  call   *%rdx                ; predictor learns stub -> target
-2135:  ; nop loop, 512 iterations
+212c:  call   *%rdx           ; stub: the BTB learns stub -> target
 ```
 
-The stored value is thus a predicted target, and nothing is written to memory in the usual sense. The value is held by the predictor, in the association between a jump and the place it is expected to go.
+The `lea` computes `val * 5` as `val + 4*val`, which is a little odd for a compiler to emit and makes it a good pattern to match. The result picks an entry in the decode table. The `call *%rdx` goes to a stub, and the BTB learns the stub-to-target mapping. That learned mapping is where the value lives.
 
-The read routine runs a long square-root dependency, which keeps the architectural pointer unready inside the window, so the call uses the predicted target. The transient path touches cache lines, and the architectural path does not. This is the same kind of readout as in Flexo, and what it reads is the value the write left in the predictor.
+The read delays with `sqrtsd` so that `rbx` is not ready, then calls the stub. The predictor supplies the target. The transient path touches the decode table, and that touch is what the timer reads. The caller then does `cmp $0x10000, %eax` and packs an out-of-range bit with a mismatch bit.
 
-```nasm
-4548:  sqrtsd %xmm0,%xmm0
-4551:  movq   %xmm0,%rax
-4556:  neg    %rax
-4559:  movzbl 0x40(%rbx,%rax,1),%r14d
-456e:  movzbl 0x3a00(%rbx,%r14,1),%eax
-4577:  movzbl 0x3bc0(%rbx,%rax,1),%ecx
-457f:  shl    $0x5,%r15
-458d:  xor    %rax,%rax
-4590:  mov    %rcx,%rbx
-4593:  call   *%rdx
-```
+The stubs themselves are `jmp *%rbx`, placed every 0x20 bytes. There are 1024 copies, with 30 bytes of nop between them. That stride is the other search hit. It is the same kind of repeated rectangle as the yellow grid in the first figure, just on the BTB side. If I plotted a TAE binary I would expect a regular lattice, because the stubs are copies at a fixed spacing.
 
-The caller then classifies the timed result with ordinary arithmetic.
+## What the run has to settle
 
-```nasm
-2172:  cmp    $0x10000,%eax
-2177:  setae  %cl          ; out of range
-217c:  xor    %ax,%bp
-217f:  setne  %dl          ; low half disagrees with the input
-2182:  lea    (%rdx,%rcx,2),%eax
-```
+The static pass proposes things. It finds the gates, the stride, the `rdtscp` sandwich, the `div` chain, and the `val*5` `lea`. It can say that this binary contains many copies of a gate body and where they sit. It cannot say which copies did anything.
 
-A value at or above 2^16 is marked out of range. The low 16 bits are compared with the input. The two flags are packed into a small integer: 0 means match, 1 a silent mismatch, 2 out of range, and 3 both. This is a check on the storage and not the storage. The value, between the write and the read, lived in a predictor entry.
+The executed copy answers a narrower question: which candidates moved a cache line. I run the binary once, watch which gates produced an effect, and match that against the candidates from the static side.
 
-A decompiler sees a square root, a negate, a call through a register, and a compare. I think that is a sharper form of the circularity Schwartz describes. Contextual equivalence can confirm the classifier bits. It can tell that the code produces 0, 1, 2 or 3 under the same circumstances as its C counterpart. It cannot confirm that a predictor entry held the value, because an ordinary calling context cannot name a predictor entry. Schwartz needs a prototype to know which registers are inputs. Here the input is not a register, and no prototype, whether taken from the decompilation or from somewhere else, has a slot for it.
+I treat a miss as ambiguous. The machine itself drops gates. The window may have been short. The BTB entry may have been cold. The 181-cycle threshold may have sat inside the noise on that run. A candidate that did not move a line in my one run is still a candidate. If I treated every quiet gate as a false positive, I would throw away real gates because the hardware had a bad moment.
 
-## Architectural agreement is the wrong check
+So the analysis has two parts. The binary gives me a proposal, and one run gives me a check. The check can miss gates that are really there, a false negative, because the machine itself dropped them. I have not measured how often that happens, and I will not guess a number here.
 
-Verification of decompilation, as usually posed, asks whether the C and the binary agree on the ISA machine. That is the right question for the programs Schwartz and HELIOS are about. It is the wrong question when the result is a cache line or a predictor entry that the ISA machine then discards, because two architecturally similar traces can be different programs when the microarchitectural state diverged.
+I am still building the pass. What I have is the list of signatures above and an idea of how to combine them with a trace. What I do not have yet is a way to say how much to trust a miss, and that is what I want to work on next.

@@ -1,6 +1,6 @@
 ---
 title: "IEEE@UCIxKeebs Macropad Workshop"
-date: 2026-06-07
+date: 2025-02-16
 draft: false
 categories: ["Workshops", "Hardware Design", "Electronics"]
 tags: ["PCB Design", "KiCad", "Soldering", "QMK", "Mechanical Keyboards", "Arduino", "3D Printing"]

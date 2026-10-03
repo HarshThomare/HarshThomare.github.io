@@ -1,6 +1,7 @@
 ---
-title: "Resume"
+title: "CV"
 layout: "resume"
-url: "/resume/"
+url: "/cv/"
+aliases: ["/resume/"]
 pdf: "pdf/Harsh_Thomare_CV.pdf"
 ---

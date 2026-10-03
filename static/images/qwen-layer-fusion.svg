@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="560" viewBox="0 0 980 560" role="img" aria-labelledby="title desc">
+  <title id="title">Activation writes for one Qwen2.5-3B layer</title>
+  <desc id="desc">Panel a lists separate launches and the activation bytes each one writes. Panel b groups those launches into seven kernels. Sizes are for a prefill of 2048 tokens in bf16.</desc>
+  <style>
+    .paper { fill: #ffffff; }
+    .rule { fill: none; stroke: #111; stroke-width: 1; }
+    .panel { fill: none; stroke: #111; stroke-width: 1.25; }
+    .box { fill: #f4f1ea; stroke: #111; stroke-width: 1; }
+    .box-keep { fill: #f7f7f7; stroke: #111; stroke-width: 1; }
+    .box-fuse { fill: #e7eef8; stroke: #111; stroke-width: 1.1; }
+    .serif { font-family: "Liberation Serif", "Times New Roman", Times, serif; fill: #111; }
+    .sans { font-family: "Liberation Sans", Arial, sans-serif; fill: #111; }
+    .muted { fill: #333; }
+  </style>
+  <rect class="paper" width="980" height="560"/>
+
+  <text class="serif" x="28" y="36" font-size="18">Figure 1. One Qwen2.5-3B layer, activation writes only</text>
+  <text class="serif muted" x="28" y="58" font-size="13">Prefill length 2048, bf16. Weight traffic is not shown. Hidden state is 8.0 MiB; one MLP intermediate is 43 MiB.</text>
+
+  <text class="serif" x="28" y="92" font-size="16">(a) Separate launches</text>
+  <rect class="panel" x="20" y="104" width="940" height="168"/>
+
+  <!-- row 1 -->
+  <g class="sans" font-size="11" text-anchor="middle">
+    <rect class="box" x="36" y="124" width="78" height="46"/>
+    <text x="75" y="143">RMSNorm</text>
+    <text x="75" y="159">8.0</text>
+
+    <rect class="box" x="128" y="124" width="62" height="46"/>
+    <text x="159" y="143">Q</text>
+    <text x="159" y="159">8.0</text>
+
+    <rect class="box" x="202" y="124" width="62" height="46"/>
+    <text x="233" y="143">K</text>
+    <text x="233" y="159">1.0</text>
+
+    <rect class="box" x="276" y="124" width="62" height="46"/>
+    <text x="307" y="143">V</text>
+    <text x="307" y="159">1.0</text>
+
+    <rect class="box" x="350" y="124" width="70" height="46"/>
+    <text x="385" y="143">RoPE</text>
+    <text x="385" y="159">in place</text>
+
+    <rect class="box-keep" x="432" y="124" width="86" height="46"/>
+    <text x="475" y="143">Attention</text>
+    <text x="475" y="159">8.0</text>
+
+    <rect class="box" x="530" y="124" width="62" height="46"/>
+    <text x="561" y="143">O</text>
+    <text x="561" y="159">8.0</text>
+
+    <rect class="box" x="604" y="124" width="70" height="46"/>
+    <text x="639" y="143">Add</text>
+    <text x="639" y="159">8.0</text>
+  </g>
+
+  <g class="sans" font-size="11" text-anchor="middle">
+    <rect class="box" x="36" y="196" width="86" height="46"/>
+    <text x="79" y="215">RMSNorm</text>
+    <text x="79" y="231">8.0</text>
+
+    <rect class="box" x="136" y="196" width="70" height="46"/>
+    <text x="171" y="215">Gate</text>
+    <text x="171" y="231">43</text>
+
+    <rect class="box" x="218" y="196" width="70" height="46"/>
+    <text x="253" y="215">Up</text>
+    <text x="253" y="231">43</text>
+
+    <rect class="box" x="300" y="196" width="86" height="46"/>
+    <text x="343" y="215">SwiGLU</text>
+    <text x="343" y="231">43</text>
+
+    <rect class="box" x="398" y="196" width="70" height="46"/>
+    <text x="433" y="215">Down</text>
+    <text x="433" y="231">8.0</text>
+
+    <rect class="box" x="480" y="196" width="70" height="46"/>
+    <text x="515" y="215">Add</text>
+    <text x="515" y="231">8.0</text>
+  </g>
+
+  <text class="serif" x="570" y="214" font-size="13">MiB written to HBM</text>
+  <text class="serif" x="570" y="234" font-size="13">per box. About 14 launches.</text>
+
+  <text class="serif" x="28" y="312" font-size="16">(b) After hand fusion</text>
+  <rect class="panel" x="20" y="324" width="940" height="210"/>
+
+  <g class="sans" font-size="12" text-anchor="middle">
+    <rect class="box-fuse" x="40" y="392" width="110" height="64"/>
+    <text x="95" y="416">RMSNorm</text>
+    <text x="95" y="436">8.0 MiB</text>
+
+    <rect class="box-fuse" x="168" y="392" width="118" height="64"/>
+    <text x="227" y="416">QKV + RoPE</text>
+    <text x="227" y="436">10 MiB</text>
+
+    <rect class="box-keep" x="304" y="392" width="110" height="64"/>
+    <text x="359" y="416">Attention</text>
+    <text x="359" y="436">8.0 MiB</text>
+
+    <rect class="box-fuse" x="432" y="392" width="100" height="64"/>
+    <text x="482" y="416">O + Add</text>
+    <text x="482" y="436">8.0 MiB</text>
+
+    <rect class="box-fuse" x="550" y="392" width="110" height="64"/>
+    <text x="605" y="416">RMSNorm</text>
+    <text x="605" y="436">8.0 MiB</text>
+
+    <rect class="box-fuse" x="678" y="392" width="130" height="64"/>
+    <text x="743" y="416">Gate+Up+SwiGLU</text>
+    <text x="743" y="436">43 MiB</text>
+
+    <rect class="box-fuse" x="826" y="392" width="112" height="64"/>
+    <text x="882" y="416">Down + Add</text>
+    <text x="882" y="436">8.0 MiB</text>
+  </g>
+
+  <!-- arrows -->
+  <g stroke="#111" stroke-width="1" fill="none">
+    <path d="M150 424 H168"/>
+    <path d="M286 424 H304"/>
+    <path d="M414 424 H432"/>
+    <path d="M532 424 H550"/>
+    <path d="M660 424 H678"/>
+    <path d="M808 424 H826"/>
+  </g>
+
+  <text class="serif" x="40" y="500" font-size="13">Seven launches. Shaded boxes are fused. Attention stays its own kernel.</text>
+  <text class="serif" x="40" y="520" font-size="13">The 43 MiB SwiGLU write replaces separate gate, up, and product writes (about 129 MiB).</text>
+</svg>
