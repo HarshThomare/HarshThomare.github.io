@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="420" viewBox="0 0 980 420" role="img" aria-labelledby="title desc">
+  <title id="title">TAE stores a value as a BTB target</title>
+  <desc id="desc">A write trains a stub to a target at table plus value times 5. A read delays the architectural pointer with a square-root chain, so the call uses the predicted target and the transient path touches a cache line.</desc>
+  <style>
+    .bg { fill: #16161e; }
+    .card { fill: #1e2030; stroke: #3b4261; }
+    .h { fill: #c0caf5; font: 600 18px ui-sans-serif, system-ui, sans-serif; }
+    .s { fill: #9aa5ce; font: 13px ui-sans-serif, system-ui, sans-serif; }
+    .box { fill: #24283b; stroke: #7aa2f7; }
+    .box2 { fill: #24283b; stroke: #bb9af7; }
+    .box3 { fill: #24283b; stroke: #9ece6a; }
+    .box4 { fill: #24283b; stroke: #e0af68; }
+    .t { fill: #c0caf5; font: 14px ui-sans-serif, system-ui, sans-serif; }
+    .m { fill: #9aa5ce; font: 12px ui-sans-serif, system-ui, sans-serif; }
+    .stub { fill: #24283b; stroke: #3b4261; }
+  </style>
+  <rect class="bg" width="980" height="420" rx="12"/>
+  <text class="h" x="36" y="46">The register file is a predictor</text>
+  <text class="s" x="36" y="70">Stubs are identical and 32 bytes apart. The value is the target, spaced by 5.</text>
+  <rect class="stub" x="36" y="100" width="140" height="36" rx="6"/>
+  <text class="m" x="106" y="123" text-anchor="middle">stub + 0x00</text>
+  <rect class="stub" x="190" y="100" width="140" height="36" rx="6"/>
+  <text class="m" x="260" y="123" text-anchor="middle">stub + 0x20</text>
+  <rect class="stub" x="344" y="100" width="140" height="36" rx="6"/>
+  <text class="m" x="414" y="123" text-anchor="middle">stub + 0x40</text>
+  <text class="s" x="510" y="123">jmp *%rbx, then padding, 1024 times</text>
+  <rect class="box" x="36" y="170" width="280" height="90" rx="8"/>
+  <text class="t" x="176" y="204" text-anchor="middle">Write</text>
+  <text class="m" x="176" y="228" text-anchor="middle">rbx = table + val * 5</text>
+  <rect class="box4" x="350" y="170" width="280" height="90" rx="8"/>
+  <text class="t" x="490" y="204" text-anchor="middle">Delay</text>
+  <text class="m" x="490" y="228" text-anchor="middle">sqrtsd chain, pointer not ready</text>
+  <rect class="box2" x="664" y="170" width="280" height="90" rx="8"/>
+  <text class="t" x="804" y="204" text-anchor="middle">Read</text>
+  <text class="m" x="804" y="228" text-anchor="middle">call *%rdx uses the prediction</text>
+  <path d="M316 215 H350" stroke="#7aa2f7" fill="none"/>
+  <path d="M630 215 H664" stroke="#e0af68" fill="none"/>
+  <rect class="box3" x="180" y="300" width="620" height="80" rx="8"/>
+  <text class="t" x="490" y="332" text-anchor="middle">Transient path touches a line. Architectural path does not.</text>
+  <text class="m" x="490" y="356" text-anchor="middle">Caller classifies the timed result: match, mismatch, or out of range.</text>
+</svg>

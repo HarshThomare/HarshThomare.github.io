@@ -11,7 +11,7 @@ url: "/about/"
   </div>
 </div>
 
-I'm an Embedded Software Engineer at Mainspring Energy, where I work on high-voltage motor control and OTA firmware systems. Outside of that, I do AI research at the intersection of large language models and systems security — most recently co-authoring *HELIOS*, a framework for LLM-based binary decompilation.
+I'm an Embedded Software Engineer at Mainspring Energy, where I work on high-voltage motor control and OTA firmware systems. Outside of that, I do AI research at the intersection of large language models and systems security. I co-authored [*HELIOS*](https://arxiv.org/html/2601.14598v2), a structure-aware approach to LLM decompilation, presented at the LAST-X workshop at NDSS 2026. I also collaborate with the UCLA Security Lab on programs whose interesting behavior is not in the architectural state. That work is unpublished.
 
 I like building things from the ground up, whether that's firmware for a 60kW motor, a custom Triton kernel, or a macropad soldered by 60 first-time builders at a workshop I ran. I studied Computer Science and Engineering at UC Irvine.
 

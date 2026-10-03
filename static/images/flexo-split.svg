@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="460" viewBox="0 0 980 460" role="img" aria-labelledby="title desc">
+  <title id="title">Flexo splits the return into two machines</title>
+  <desc id="desc">Five divisions leave remainder 0x200, which is added to the stacked return address. The return stack buffer still predicts the fall-through, so the stores run only transiently. A timed load reads which cache line moved.</desc>
+  <style>
+    .bg { fill: #16161e; }
+    .card { fill: #1e2030; stroke: #3b4261; }
+    .h { fill: #c0caf5; font: 600 18px ui-sans-serif, system-ui, sans-serif; }
+    .s { fill: #9aa5ce; font: 13px ui-sans-serif, system-ui, sans-serif; }
+    .box { fill: #24283b; stroke: #7aa2f7; }
+    .box2 { fill: #24283b; stroke: #f7768e; }
+    .box3 { fill: #24283b; stroke: #9ece6a; }
+    .box4 { fill: #24283b; stroke: #e0af68; }
+    .t { fill: #c0caf5; font: 14px ui-sans-serif, system-ui, sans-serif; }
+    .m { fill: #9aa5ce; font: 12px ui-sans-serif, system-ui, sans-serif; }
+  </style>
+  <rect class="bg" width="980" height="460" rx="12"/>
+  <text class="h" x="36" y="46">Two return addresses, one ret</text>
+  <text class="s" x="36" y="70">The five div instructions leave remainder 0x200. That is what is added to (%rsp).</text>
+  <rect class="box4" x="36" y="100" width="200" height="88" rx="8"/>
+  <text class="t" x="136" y="134" text-anchor="middle">div cx, five times</text>
+  <text class="m" x="136" y="158" text-anchor="middle">remainder DX = 0x200</text>
+  <rect class="box" x="280" y="100" width="250" height="88" rx="8"/>
+  <text class="t" x="405" y="134" text-anchor="middle">add %rdx, (%rsp)</text>
+  <text class="m" x="405" y="158" text-anchor="middle">stacked return += 512 bytes</text>
+  <rect class="box2" x="575" y="100" width="180" height="88" rx="8"/>
+  <text class="t" x="665" y="134" text-anchor="middle">ret</text>
+  <text class="m" x="665" y="158" text-anchor="middle">predictor ` stack</text>
+  <path d="M236 144 H280" stroke="#e0af68" fill="none"/>
+  <path d="M530 144 H575" stroke="#7aa2f7" fill="none"/>
+  <rect class="box2" x="80" y="250" width="360" height="110" rx="8"/>
+  <text class="t" x="260" y="284" text-anchor="middle">RSB path, transient</text>
+  <text class="m" x="260" y="308" text-anchor="middle">loads at the call's fall-through</text>
+  <text class="m" x="260" y="328" text-anchor="middle">store address depends on the input byte</text>
+  <rect class="box" x="520" y="250" width="380" height="110" rx="8"/>
+  <text class="t" x="710" y="284" text-anchor="middle">Stack path, architectural</text>
+  <text class="m" x="710" y="308" text-anchor="middle">lands 0x200 bytes later, in the nop sled</text>
+  <text class="m" x="710" y="328" text-anchor="middle">the address-dependent stores never commit</text>
+  <path d="M620 188 V220 H260 V250" stroke="#f7768e" fill="none"/>
+  <path d="M700 188 V220 H710 V250" stroke="#7aa2f7" fill="none"/>
+  <rect class="box3" x="250" y="390" width="460" height="46" rx="8"/>
+  <text class="t" x="480" y="418" text-anchor="middle">rdtscp around one load. Threshold in the listing: 0xb5 cycles.</text>
+</svg>
