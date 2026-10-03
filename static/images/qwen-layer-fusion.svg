@@ -89,7 +89,7 @@
 
   <g class="sans" font-size="12" text-anchor="middle">
     <rect class="box-fuse" x="40" y="392" width="110" height="64"/>
-    <text x="95" y="416">Add + RMS</text>
+    <text x="95" y="416">RMSNorm</text>
     <text x="95" y="436">8.0 MiB</text>
 
     <rect class="box-fuse" x="168" y="392" width="118" height="64"/>
@@ -105,7 +105,7 @@
     <text x="482" y="436">8.0 MiB</text>
 
     <rect class="box-fuse" x="550" y="392" width="110" height="64"/>
-    <text x="605" y="416">Add + RMS</text>
+    <text x="605" y="416">RMSNorm</text>
     <text x="605" y="436">8.0 MiB</text>
 
     <rect class="box-fuse" x="678" y="392" width="130" height="64"/>

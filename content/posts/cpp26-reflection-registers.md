@@ -20,7 +20,7 @@ What I wanted is small, and it lives on the host. The vendor toolchain for the b
 
 Reflection gives me the prefix `^^` and a splice `[: refl :]`, plus queries for the nonstatic data members of a type, a member's name, its offset, and its size. I use those in one `consteval` function and one `static_assert`. The device compiler never sees that code. It keeps compiling ordinary C++20 and includes the plain struct.
 
-Here is the check. The masks are illustrative, not copied from a reference manual. I have not built this exact snippet on a specific compiler, so treat it as a sketch of the shape.
+Here is the check. The masks are illustrative, not copied from a reference manual. I have not built this exact snippet on a specific compiler, so treat it as a sketch of the shape. A current reflection implementation may return the offset as a small struct, so the comparison wants the byte field, and the member query may take an extra argument. The check also has to live in a host-only file. A shared header would land in the device build, which is still on C++20.
 
 ```cpp
 struct FieldSpec {

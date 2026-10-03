@@ -4,7 +4,7 @@ date: 2025-11-18
 draft: false
 categories: ["Systems", "GPU"]
 tags: ["Qwen", "Triton", "A6000", "inference"]
-summary: "Which launches in a Qwen2.5-3B layer I fused by hand, what that is worth on an A6000, and why that is a different object from the mega-kernel in the MPK talk."
+summary: "Which launches in a Qwen2.5-3B layer I fused by hand, what that is worth on an A6000, and why that partial fusion is not the single mega-kernel MPK describes."
 description: "A reconstructed account of hand-fusing a Qwen2.5-3B block in Triton, with A6000 estimates derived from the public config."
 ---
 
@@ -53,11 +53,11 @@ That is about 14 launches a layer and about 500 per token. I will take 5 microse
 
 I wrote everything in Triton, for one GPU, with no collectives. The groups:
 
-1. Residual add and RMSNorm as one small kernel.
+1. RMSNorm on the residual stream.
 2. Q, K and V as one GEMM, with the three weight matrices concatenated. RoPE went into the epilogue when a tile held a full head pair. Otherwise RoPE stayed a second kernel. This one was often separate, so the count below is a best case.
 3. Attention, left alone. FlashAttention is already a fused algorithm, and it does not drop into a GEMM epilogue.
 4. O projection, with the residual add in the epilogue.
-5. Residual add and RMSNorm again.
+5. RMSNorm again, on that sum.
 6. Gate and up as one GEMM, with SwiGLU in the epilogue: `silu(gate) * up`. Those two intermediate tensors never go back to HBM.
 7. Down projection, with the residual add in the epilogue.
 
@@ -124,10 +124,14 @@ Unfused, the gate, up and product writes come to about 129 MiB per layer. With t
 
 I am not giving a prefill tokens/s number. I never recorded one that I can trust, and deriving one from this table would be invention. What I can say is that the MLP is where the large activation tensors are, and the gate and up fusion removes two of the three.
 
-## The talk uses the word differently
+## What MPK means by mega-kernel
 
-For a while I called these fused functions mega-kernels. I stopped after watching the GPU MODE talk by Mengdi Wu and Xinhao Cheng, ["Mirage (MPK): Compiling LLMs into Mega Kernels"](https://www.youtube.com/watch?v=_EbQwE5mDFY). The paper is Cheng et al., ["MPK: A Compiler and Runtime for Mega-Kernelizing Tensor Programs"](https://arxiv.org/html/2512.22219).
+For a while I called these fused functions mega-kernels. I stopped after watching the GPU MODE talk by Mengdi Wu and Xinhao Cheng, ["Mirage (MPK): Compiling LLMs into Mega Kernels"](https://www.youtube.com/watch?v=_EbQwE5mDFY), and reading the paper, Cheng et al., ["MPK: A Compiler and Runtime for Mega-Kernelizing Tensor Programs"](https://arxiv.org/html/2512.22219).
 
-Their object is one persistent launch for the whole model. Work is split into tasks that each occupy one SM, and a finished tile can enter the next operator before the other SMs have finished the current kernel. My version still has a kernel boundary around attention and around each GEMM group. Every one of those boundaries is a point where all SMs finish before the next kernel starts. I was also on one A6000, so there was no all-reduce for a finished tile to enter.
+MPK means one kernel for the whole model. The introduction says to fuse all computation and communication into a single mega-kernel, also called a persistent kernel. The system launches one GPU kernel that runs the entire model, from the layer math through inter-GPU communication, without another launch in between. The abstract says the same thing. MPK turns multi-GPU inference into a single mega-kernel. So the idea is to fuse all of the components into one.
 
-I did not build or run MPK. This is a comparison of what the two things are, and it says nothing about how fast either one runs.
+Inside that kernel the work is a graph of tasks, each one sized to an SM. That graph is how the single kernel is organized. A tile that has finished can feed the next operator while other SMs are still on the current one.
+
+What I wrote fused neighboring operators inside a layer. That still leaves about seven launches per layer, with a kernel boundary around attention and around each GEMM group. At every boundary the SMs drain before the next kernel starts. I was also on one A6000, so there was no inter-GPU communication to put in the launch.
+
+I did not build or run MPK. This post compares the two objects, and it says nothing about how fast either one runs.

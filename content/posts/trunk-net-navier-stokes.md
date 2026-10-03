@@ -8,7 +8,7 @@ summary: "A U-Net for a flow field has no coordinate input, so the Navier-Stokes
 description: "How to put a PINN residual on a U-Net field model by differentiating a trunk net instead of the convolutions."
 ---
 
-I was reading a paper that uses a U-Net for scientific machine learning on the Navier-Stokes equations: Ma, Zhang, Thuerey, Hu, and Haidn, ["Physics-driven Learning of the Steady Navier-Stokes Equations using Deep Convolutional Neural Networks"](https://arxiv.org/abs/2106.09301). They put the physics in the loss. The derivatives in that loss are finite differences on the grid.
+I was reading a paper that uses a U-Net for scientific machine learning on the Navier-Stokes equations: Ma, Zhang, Thuerey, Hu, and Haidn, ["Physics-driven Learning of the Steady Navier-Stokes Equations using Deep Convolutional Neural Networks"](https://arxiv.org/abs/2106.09301). They put the physics in the loss, and their problem is steady flow. The derivatives in that loss are finite differences on the grid. I wanted the time-dependent vorticity equation.
 
 I wanted to extend that with a PINN, meaning I wanted to differentiate the network with respect to the coordinates. The lecture that fixed the idea for me is Steve Brunton's overview, ["Physics Informed Machine Learning"](https://www.youtube.com/watch?v=JoFW2uSd3Uo). The PDE residual goes in the loss, and automatic differentiation produces the derivatives.
 
@@ -38,7 +38,7 @@ In a standard DeepONet the branch is an MLP on sensor values. Here the U-Net is 
 ω(x, y, t) = Σ_k B_k(x, y) φ_k(x, y, t)
 ```
 
-The trunk takes the coordinates, so the derivative lives there: ∂ω/∂y = Σ_k B_k ∂φ_k/∂y. The coefficients B_k are constant with respect to the query as long as the sample location is detached. The convolutions never see a derivative with respect to x, y or t.
+The trunk takes the coordinates, so the derivative lives there: ∂ω/∂y = Σ_k B_k ∂φ_k/∂y. The coefficients B_k are constant with respect to the query as long as the sample location is detached, so this derivative leaves out how the coefficient maps change from cell to cell. The convolutions never see a derivative with respect to x, y or t.
 
 Here is the code, shortened:
 
@@ -67,6 +67,6 @@ The second is `xy.detach()`. Without it, the gather that picks the nearest cell 
 
 ## Velocity
 
-I have not picked how to get u and v. Option A is a second trunk head for the stream function ψ. Then u and v are trunk derivatives too, and ∇²ψ + ω = 0 becomes another residual in the loss. Option B is to solve the Poisson equation for ψ on the grid, outside autodiff, and stop the gradient on u and v. Option B uses less memory. It also means the convective term cannot teach the trunk.
+I have not picked how to get u and v. Option A is a second trunk head for the stream function ψ. Then u and v are trunk derivatives too, and ∇²ψ + ω = 0 becomes another residual in the loss. Option B is to solve the Poisson equation for ψ on the grid, outside autodiff, and stop the gradient on u and v. Option B uses less memory. With u and v stopped, the trunk still learns through ∂ω/∂x and ∂ω/∂y. What it loses is a gradient for the velocity itself.
 
 I have not trained this pair, so what you have here is the shape of the backward pass, not a result.

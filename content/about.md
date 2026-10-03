@@ -7,11 +7,11 @@ url: "/about/"
   {{< img src="/images/harsh-profile.jpg" alt="Harsh Thomare" priority="true" style="border-radius: 50%; width: 150px; height: 150px; object-fit: cover; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" >}}
   <div>
     <h1 style="margin: 0; border-bottom: none;">Harsh Thomare</h1>
-    <p style="font-size: 1.2em; color: #555; margin-top: 5px;">Embedded Software Engineer & AI Researcher</p>
+    <p style="font-size: 1.2em; color: #555; margin-top: 5px;">Embedded Software Engineer &amp; AI Researcher</p>
   </div>
 </div>
 
-I'm an embedded software engineer at Mainspring Energy, where I work on high-voltage motor control and the firmware that ships updates to those machines. My research is at the intersection of systems and language models: the failures I care about show up when a model has to read a binary, a trace, or a generated kernel, and the question is what state you actually handed it. A lot of that is still a systems problem, about interfaces and about state the machine keeps that never appears in the model's input. I currently work at UCLA's Security Lab. I also write Triton kernels, and fuse pieces of a model when the profiler says the launches and the memory traffic are the cost.
+I'm an embedded software engineer at Mainspring Energy, where I work on high-voltage motor control and OTA firmware. My research is at the intersection of systems and language models. I currently work at UCLA's Security Lab. I also write Triton kernels.
 
 When I'm AFK, I'm usually DJing or out cycling.
 
