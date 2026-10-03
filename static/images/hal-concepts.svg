@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="440" viewBox="0 0 980 440" role="img" aria-labelledby="title desc">
+  <title id="title">Virtual HAL versus a concept-checked HAL</title>
+  <desc id="desc">A virtual interface shares one driver and pays an indirect call. A concept constrains two monomorphized drivers, one for the mock and one for the registers, and the compiler can see the register address.</desc>
+  <style>
+    .bg { fill: #16161e; }
+    .card { fill: #1e2030; stroke: #3b4261; }
+    .h { fill: #c0caf5; font: 600 18px ui-sans-serif, system-ui, sans-serif; }
+    .s { fill: #9aa5ce; font: 13px ui-sans-serif, system-ui, sans-serif; }
+    .box { fill: #24283b; stroke: #7aa2f7; }
+    .box2 { fill: #24283b; stroke: #bb9af7; }
+    .box3 { fill: #24283b; stroke: #9ece6a; }
+    .t { fill: #c0caf5; font: 13px ui-sans-serif, system-ui, sans-serif; }
+    .m { fill: #9aa5ce; font: 12px ui-sans-serif, system-ui, sans-serif; }
+  </style>
+  <rect class="bg" width="980" height="440" rx="12"/>
+  <rect class="card" x="24" y="24" width="452" height="392" rx="10"/>
+  <rect class="card" x="504" y="24" width="452" height="392" rx="10"/>
+  <text class="h" x="44" y="58">Virtual HAL</text>
+  <text class="s" x="44" y="80">One driver. The peripheral is chosen at runtime.</text>
+  <text class="h" x="524" y="58">Concept, then a template</text>
+  <text class="s" x="524" y="80">Two drivers. The peripheral is chosen at compile time.</text>
+  <rect class="box" x="150" y="110" width="200" height="48" rx="8"/>
+  <text class="t" x="250" y="139" text-anchor="middle">LineReader</text>
+  <rect class="box2" x="150" y="190" width="200" height="40" rx="8"/>
+  <text class="t" x="250" y="215" text-anchor="middle">IUart vtable</text>
+  <rect class="box3" x="60" y="270" width="160" height="52" rx="8"/>
+  <text class="t" x="140" y="292" text-anchor="middle">MockUart</text>
+  <text class="m" x="140" y="310" text-anchor="middle">records bytes</text>
+  <rect class="box3" x="250" y="270" width="180" height="52" rx="8"/>
+  <text class="t" x="340" y="292" text-anchor="middle">Stm32Uart</text>
+  <text class="m" x="340" y="310" text-anchor="middle">load via pointer</text>
+  <path d="M250 158 V190" stroke="#7aa2f7" fill="none"/>
+  <path d="M190 230 V270" stroke="#bb9af7" fill="none"/>
+  <path d="M310 230 V270" stroke="#bb9af7" fill="none"/>
+  <text class="s" x="44" y="360">The call cannot see which SR it will load.</text>
+  <text class="s" x="44" y="382">Fine for a slow task. Costly in a tight poll.</text>
+  <rect class="box2" x="620" y="108" width="220" height="36" rx="8"/>
+  <text class="t" x="730" y="131" text-anchor="middle">concept UartHal</text>
+  <rect class="box" x="560" y="180" width="160" height="64" rx="8"/>
+  <text class="t" x="640" y="206" text-anchor="middle">LineReader&lt;Mock&gt;</text>
+  <text class="m" x="640" y="226" text-anchor="middle">host test binary</text>
+  <rect class="box" x="750" y="180" width="170" height="64" rx="8"/>
+  <text class="t" x="835" y="206" text-anchor="middle">LineReader&lt;Stm32&gt;</text>
+  <text class="m" x="835" y="226" text-anchor="middle">firmware image</text>
+  <rect class="box3" x="560" y="276" width="160" height="44" rx="8"/>
+  <text class="t" x="640" y="303" text-anchor="middle">inlined write()</text>
+  <rect class="box3" x="750" y="276" width="170" height="44" rx="8"/>
+  <text class="t" x="835" y="303" text-anchor="middle">SR address is a constant</text>
+  <path d="M680 144 V180" stroke="#bb9af7" fill="none"/>
+  <path d="M790 144 V180" stroke="#bb9af7" fill="none"/>
+  <path d="M640 244 V276" stroke="#9ece6a" fill="none"/>
+  <path d="M835 244 V276" stroke="#9ece6a" fill="none"/>
+  <text class="s" x="524" y="360">Two copies of the driver, if the driver is large.</text>
+  <text class="s" x="524" y="382">No vptr. The mock is not in the flash image.</text>
+</svg>

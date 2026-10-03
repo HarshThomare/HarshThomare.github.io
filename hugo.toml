@@ -1,4 +1,4 @@
-baseURL = 'https://harshthomare.github.io/harsh-personal-website/'
+baseURL = 'https://harshthomare.github.io/'
 languageCode = 'en-us'
 title = 'Harsh Thomare'
 theme = 'PaperMod'

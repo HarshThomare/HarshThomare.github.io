@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="460" viewBox="0 0 980 460" role="img" aria-labelledby="title desc">
+  <title id="title">Kernel barriers versus an SM-level schedule</title>
+  <desc id="desc">Left: two kernels separated by a barrier, so the all-reduce waits for every matmul block. Right: matmul and all-reduce tasks overlap across SMs, joined only where a tile is actually ready.</desc>
+  <style>
+    .bg { fill: #16161e; }
+    .card { fill: #1e2030; stroke: #3b4261; }
+    .h { fill: #c0caf5; font: 600 18px ui-sans-serif, system-ui, sans-serif; }
+    .s { fill: #9aa5ce; font: 13px ui-sans-serif, system-ui, sans-serif; }
+    .lab { fill: #c0caf5; font: 12px ui-sans-serif, system-ui, sans-serif; }
+    .mm { fill: #7aa2f7; }
+    .ar { fill: #bb9af7; }
+    .bar { fill: #e0af68; }
+    .ev { fill: #9ece6a; }
+    .idle { fill: #2a2e42; }
+  </style>
+  <rect class="bg" width="980" height="460" rx="12"/>
+  <rect class="card" x="24" y="24" width="452" height="412" rx="10"/>
+  <rect class="card" x="504" y="24" width="452" height="412" rx="10"/>
+  <text class="h" x="44" y="58">Kernel per operator</text>
+  <text class="s" x="44" y="80">A barrier hides between the launches</text>
+  <text class="h" x="524" y="58">SM-level schedule</text>
+  <text class="s" x="524" y="80">A task waits only on the tile it consumes</text>
+  <g font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" fill="#9aa5ce">
+    <text x="44" y="118">time</text>
+    <text x="430" y="118" text-anchor="end">-&gt;</text>
+    <text x="524" y="118">time</text>
+    <text x="910" y="118" text-anchor="end">-&gt;</text>
+  </g>
+  <!-- left timeline -->
+  <text class="lab" x="44" y="156">SM 0</text>
+  <text class="lab" x="44" y="196">SM 1</text>
+  <text class="lab" x="44" y="236">SM 2</text>
+  <text class="lab" x="44" y="276">SM 3</text>
+  <rect class="mm" x="100" y="140" width="150" height="22" rx="3"/>
+  <rect class="mm" x="100" y="180" width="130" height="22" rx="3"/>
+  <rect class="mm" x="100" y="220" width="160" height="22" rx="3"/>
+  <rect class="mm" x="100" y="260" width="110" height="22" rx="3"/>
+  <rect class="bar" x="268" y="132" width="8" height="160" rx="2"/>
+  <rect class="idle" x="160" y="300" width="100" height="16" rx="2"/>
+  <rect class="ar" x="284" y="140" width="140" height="22" rx="3"/>
+  <rect class="ar" x="284" y="180" width="140" height="22" rx="3"/>
+  <rect class="ar" x="284" y="220" width="140" height="22" rx="3"/>
+  <rect class="ar" x="284" y="260" width="140" height="22" rx="3"/>
+  <text class="s" x="44" y="348">Matmul finishes early on SM 3 and still waits.</text>
+  <text class="s" x="44" y="370">The all-reduce cannot start until the last tile.</text>
+  <text class="s" x="44" y="400">Blue: matmul. Purple: all-reduce. Gold: kernel barrier.</text>
+  <!-- right timeline -->
+  <text class="lab" x="524" y="156">SM 0</text>
+  <text class="lab" x="524" y="196">SM 1</text>
+  <text class="lab" x="524" y="236">SM 2</text>
+  <text class="lab" x="524" y="276">SM 3</text>
+  <rect class="mm" x="580" y="140" width="120" height="22" rx="3"/>
+  <rect class="ar" x="708" y="140" width="130" height="22" rx="3"/>
+  <circle class="ev" cx="706" cy="151" r="5"/>
+  <rect class="mm" x="580" y="180" width="150" height="22" rx="3"/>
+  <rect class="ar" x="738" y="180" width="110" height="22" rx="3"/>
+  <circle class="ev" cx="736" cy="191" r="5"/>
+  <rect class="mm" x="580" y="220" width="100" height="22" rx="3"/>
+  <rect class="ar" x="688" y="220" width="140" height="22" rx="3"/>
+  <circle class="ev" cx="686" cy="231" r="5"/>
+  <rect class="mm" x="580" y="260" width="170" height="22" rx="3"/>
+  <rect class="ar" x="758" y="260" width="90" height="22" rx="3"/>
+  <circle class="ev" cx="756" cy="271" r="5"/>
+  <text class="s" x="524" y="348">Each all-reduce task starts when its own tile is ready.</text>
+  <text class="s" x="524" y="370">The green dots are those dependencies, not a kernel edge.</text>
+  <text class="s" x="524" y="400">One persistent kernel. The schedule lives inside it.</text>
+</svg>

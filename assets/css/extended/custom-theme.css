@@ -10,6 +10,27 @@
     --border: rgb(226, 232, 240);
 }
 
+article figure {
+    margin: 1.6rem 0 1.8rem;
+}
+
+article figure img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: #16161e;
+}
+
+article figcaption {
+    margin-top: 0.55rem;
+    font-size: 0.92rem;
+    line-height: 1.5;
+    color: var(--content);
+    opacity: 0.88;
+}
+
 :root[data-theme="dark"] {
     --theme: rgb(26, 27, 38);
     --entry: rgb(36, 40, 59);

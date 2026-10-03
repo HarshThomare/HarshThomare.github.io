@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="420" viewBox="0 0 980 420" role="img" aria-labelledby="title desc">
+  <title id="title">One register description checked against the layout</title>
+  <desc id="desc">A host C++26 program reflects a register struct and checks that every field has a legal-bit mask. The same table feeds a shadow mock. The device compiler only sees an ordinary header.</desc>
+  <style>
+    .bg { fill: #16161e; }
+    .card { fill: #1e2030; stroke: #3b4261; }
+    .h { fill: #c0caf5; font: 600 18px ui-sans-serif, system-ui, sans-serif; }
+    .s { fill: #9aa5ce; font: 13px ui-sans-serif, system-ui, sans-serif; }
+    .box { fill: #24283b; stroke: #7aa2f7; }
+    .box2 { fill: #24283b; stroke: #bb9af7; }
+    .box3 { fill: #24283b; stroke: #9ece6a; }
+    .bad { fill: #24283b; stroke: #e0af68; }
+    .t { fill: #c0caf5; font: 14px ui-sans-serif, system-ui, sans-serif; }
+    .m { fill: #9aa5ce; font: 12px ui-sans-serif, system-ui, sans-serif; }
+  </style>
+  <rect class="bg" width="980" height="420" rx="12"/>
+  <text class="h" x="40" y="48">Host compiler, C++26 reflection</text>
+  <text class="s" x="40" y="72">The microcontroller toolchain never has to implement it.</text>
+  <rect class="box" x="40" y="110" width="250" height="110" rx="10"/>
+  <text class="t" x="165" y="146" text-anchor="middle">struct TimerRegs</text>
+  <text class="m" x="165" y="170" text-anchor="middle">cr1, dier, sr, arr, ccr1</text>
+  <text class="m" x="165" y="190" text-anchor="middle">offsets checked with ^^</text>
+  <rect class="box2" x="365" y="110" width="250" height="110" rx="10"/>
+  <text class="t" x="490" y="146" text-anchor="middle">legal-bit table</text>
+  <text class="m" x="490" y="170" text-anchor="middle">one mask per name</text>
+  <text class="m" x="490" y="190" text-anchor="middle">illustrative, not a manual paste</text>
+  <rect class="bad" x="690" y="110" width="250" height="110" rx="10"/>
+  <text class="t" x="815" y="146" text-anchor="middle">static_assert</text>
+  <text class="m" x="815" y="170" text-anchor="middle">every field has a mask</text>
+  <text class="m" x="815" y="190" text-anchor="middle">every mask has a field</text>
+  <path d="M290 165 H365" stroke="#7aa2f7" fill="none" stroke-width="1.5"/>
+  <path d="M615 165 H690" stroke="#bb9af7" fill="none" stroke-width="1.5"/>
+  <rect class="box3" x="150" y="280" width="280" height="90" rx="10"/>
+  <text class="t" x="290" y="316" text-anchor="middle">ShadowTimer::write</text>
+  <text class="m" x="290" y="340" text-anchor="middle">rejects reserved bits, records touches</text>
+  <rect class="box3" x="550" y="280" width="280" height="90" rx="10"/>
+  <text class="t" x="690" y="316" text-anchor="middle">timer_regs.h</text>
+  <text class="m" x="690" y="340" text-anchor="middle">plain C++20 the device compiler builds</text>
+  <path d="M490 220 V250 H290 V280" stroke="#9ece6a" fill="none"/>
+  <path d="M490 250 H690 V280" stroke="#9ece6a" fill="none"/>
+</svg>
