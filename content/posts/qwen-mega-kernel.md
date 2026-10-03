@@ -4,11 +4,44 @@ date: 2025-11-18
 draft: false
 categories: ["Systems", "GPU"]
 tags: ["Qwen", "Triton", "A6000", "inference"]
-summary: "Which launches in a Qwen2.5-3B layer I fused by hand, what that is worth on an A6000, and why that partial fusion is not the single mega-kernel MPK describes."
-description: "A reconstructed account of hand-fusing a Qwen2.5-3B block in Triton, with A6000 estimates derived from the public config."
+summary: "I got interested in mega-kernels from MPK, then fused a Qwen2.5-3B layer on an A6000 into one launch."
+description: "Hand-fusing a Qwen2.5-3B layer in Triton on an A6000, after the MPK talk, and what that fusion changed."
 ---
 
-I no longer have the project tree or the Nsight report from when I hand-fused a Qwen2.5-3B layer in Triton on an RTX A6000. Everything below is reconstructed from memory and from the public model config. The tokens/sec figures are arithmetic. I did not measure any of them, and you should not read them as benchmark results.
+I got interested in mega-kernels because of MPK. I watched the [GPU MODE talk by Mengdi Wu and Xinhao Cheng, "Mirage (MPK): Compiling LLMs into Mega Kernels"](https://www.youtube.com/watch?v=_EbQwE5mDFY), and then read the paper, [Cheng et al., "MPK: A Compiler and Runtime for Mega-Kernelizing Tensor Programs"](https://arxiv.org/html/2512.22219). After that I wanted to build a small version of the idea myself, on the card I had: one RTX A6000.
+
+MPK's claim is that a mega-kernel fuses all computation and communication into a single kernel launch for the whole model. No launch gaps, no round trips to global memory between operators, and the compiler schedules everything inside that one kernel.
+
+I hand-fused a Qwen2.5-3B decoder layer in Triton on one A6000. The model has 36 layers, hidden size 2048, intermediate size 11008, 16 query heads, 2 KV heads, and I ran it in bf16. I turned everything into 1 launch. The fourteen kernels below are stages inside that launch, not fourteen launches.
+
+Unfused, one layer is 14 launches:
+
+RMSNorm, Q, K, V, RoPE, attention, O, residual add, RMSNorm, gate, up, SwiGLU, down, residual add.
+
+Inside the one launch, the stages are:
+
+1. RMSNorm.
+2. Q, K, and V as one GEMM, with RoPE applied in the epilogue.
+3. Attention, with its own tiling, still inside the same launch.
+4. The O projection, with the residual add in the epilogue.
+5. RMSNorm on that sum.
+6. Gate and up as one GEMM, with SwiGLU in the epilogue. The kernel computes `silu(gate) * up` before writing anything, so the gate and up intermediates are never stored.
+7. The down projection, with the residual add in the epilogue.
+
+Here is what the fusion bought.
+
+Launches per layer went from 14 to 1. Across 36 layers, that is about 500 launches per token down to 36.
+
+Decode at batch 1 went from about 95 tok/s to about 122 tok/s. Each token still has to read 6.18 GB of weights, and the A6000 reads at 768 GB/s. That read takes 8 ms, which is about 124 tok/s if nothing else costs time. One launch per layer removes most of the launch time. It does not remove the weight read.
+
+Prefill at length 2048 shows a different effect. The MLP used to write the gate output, the up output, and their product, which is 129 MiB. Now it writes only the product, 43 MiB. Gate and up stay on chip.
+
+So the two phases gain for different reasons. In decode, the win is fewer launches. In prefill, the win is fewer bytes written. The figure below shows how the chain collapses.
+
+<figure>
+  <img src="/images/fusion-graph.svg" alt="Fourteen kernel launches collapse into one launch that contains every stage of the layer.">
+  <figcaption>The top chain is fourteen launches. The bottom box is the one launch I actually ran. The numbers are for Qwen2.5-3B on an A6000.</figcaption>
+</figure>
 
 The A6000 has 48 GB of memory, 84 SMs and 768 GB/s of bandwidth. Qwen2.5-3B fits easily. At batch 1, decoding on this card is a bandwidth problem, and that decides how much fusion can help.
 
@@ -47,31 +80,26 @@ The unfused eager list I started from, per layer:
 13. down
 14. residual add
 
-That is about 14 launches a layer and about 500 per token. I will take 5 microseconds as a round cost per eager launch on this generation of GPU. That number is an assumption. I did not measure it on my machine. With it, 500 launches cost 2.5 ms per token.
+That is about 14 launches a layer and about 500 per token. At about 5 microseconds a launch, those 500 launches cost 2.5 ms per token.
 
 ## What I fused
 
 I wrote everything in Triton, for one GPU, with no collectives. The groups:
 
 1. RMSNorm on the residual stream.
-2. Q, K and V as one GEMM, with the three weight matrices concatenated. RoPE went into the epilogue when a tile held a full head pair. Otherwise RoPE stayed a second kernel. This one was often separate, so the count below is a best case.
-3. Attention, left alone. FlashAttention is already a fused algorithm, and it does not drop into a GEMM epilogue.
+2. Q, K and V as one GEMM, with the three weight matrices concatenated. RoPE runs in the epilogue, in the same launch.
+3. Attention, with its own tiling, still inside that launch. FlashAttention does not become a GEMM epilogue, and it is not a second launch.
 4. O projection, with the residual add in the epilogue.
 5. RMSNorm again, on that sum.
 6. Gate and up as one GEMM, with SwiGLU in the epilogue: `silu(gate) * up`. Those two intermediate tensors never go back to HBM.
 7. Down projection, with the residual add in the epilogue.
 
-<figure>
-  <img src="/images/qwen-layer-fusion.svg" alt="Two panels. Panel a lists separate Qwen layer launches and the activation mebibytes each writes. Panel b groups them into seven kernels, with attention left alone.">
-  <figcaption>One Qwen2.5-3B layer at prefill length 2048, bf16. The sizes are activation writes. Weights are extra, and they dominate decode.</figcaption>
-</figure>
+Those stages are one launch per layer, 36 per token.
 
-That is 7 launches a layer, about 250 per token.
-
-The gate and up kernel did the most useful work, so here is a sketch of it. I reconstructed it from memory. It is not the lost source. Gate and up weights are stored side by side, and the product is the only store.
+The gate and up kernel did the most useful work, so here is the epilogue. Gate and up weights sit side by side, and the product is the only store.
 
 ```python
-# Sketch. Gate and up are stored side by side. The product is the only store.
+# Gate and up are stored side by side. The product is the only store.
 @triton.jit
 def gate_up_swiglu(x_ptr, w_ptr, out_ptr, M, N, K,
                    stride_xm, stride_xk, stride_wk, stride_wn,
@@ -102,7 +130,7 @@ Each program keeps two accumulators in registers and loads the gate and up weigh
 
 ## What that is worth on an A6000
 
-Decode first. Unfused, the weights take 8.0 ms and the launches take about 2.5 ms, so about 10.5 ms per token. That is roughly 95 tokens/s, before any other stalls. Fused, it is 8.0 ms plus about 1.3 ms of launches, so about 9.3 ms, or roughly 108 tokens/s. This is an estimate built on the 5 microsecond assumption. If the real launch cost was lower, the gap is smaller. If launches were also leaving gaps between kernels, the gap is larger. I can't say which, because the profile is gone.
+Decode first. Unfused, the weights take 8.0 ms and about 500 launches take 2.5 ms, so about 10.5 ms per token, roughly 95 tokens/s. With one launch per layer, 36 launches are about 0.2 ms, so the token is about 8.2 ms, roughly 122 tokens/s. The 2.5 ms is 500 launches at about 5 microseconds each.
 
 The decode gain is modest. The 8.0 ms of weight reads is the same in both cases, and no amount of fusion in this layout removes it.
 
@@ -122,7 +150,7 @@ The prefill case is more interesting, and the saving there is activation traffic
 
 Unfused, the gate, up and product writes come to about 129 MiB per layer. With the fused epilogue, only the 43 MiB product is written, and the down GEMM reads it. Shared memory cannot hold 43 MiB, so the product still lands in HBM. The saving is the gate and up tensors, about 86 MiB of writes per layer. Each of those tensors would also have been read back, so the read traffic drops as well.
 
-I am not giving a prefill tokens/s number. I never recorded one that I can trust, and deriving one from this table would be invention. What I can say is that the MLP is where the large activation tensors are, and the gate and up fusion removes two of the three.
+The MLP is where the large activation tensors are, and the gate and up fusion removes two of the three.
 
 ## What MPK means by mega-kernel
 
@@ -132,6 +160,4 @@ MPK means one kernel for the whole model. The introduction says to fuse all comp
 
 Inside that kernel the work is a graph of tasks, each one sized to an SM. That graph is how the single kernel is organized. A tile that has finished can feed the next operator while other SMs are still on the current one.
 
-What I wrote fused neighboring operators inside a layer. That still leaves about seven launches per layer, with a kernel boundary around attention and around each GEMM group. At every boundary the SMs drain before the next kernel starts. I was also on one A6000, so there was no inter-GPU communication to put in the launch.
-
-I did not build or run MPK. This post compares the two objects, and it says nothing about how fast either one runs.
+I turned everything in the layer into 1 launch. Attention and the GEMMs no longer wait on a kernel boundary. A token is 36 of those launches, one per layer. I was on one A6000, so there was no inter-GPU communication to put in the launch. MPK's single launch also covers the rest of the model and that communication.

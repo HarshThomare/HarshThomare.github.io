@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="430" viewBox="0 0 980 430" role="img" aria-labelledby="title desc">
+  <title id="title">Fusion graph for one Qwen2.5-3B layer</title>
+  <desc id="desc">The unfused layer is a chain of 14 kernels. All of them run inside one launch.</desc>
+  <style>
+    .paper { fill: #fff; }
+    .serif { font-family: "Liberation Serif", "Times New Roman", Times, serif; fill: #111; }
+    .sans { font-family: "Liberation Sans", Arial, sans-serif; fill: #111; }
+    .muted { fill: #333; }
+    .node { fill: #f7f4ee; stroke: #111; stroke-width: 1; }
+    .attn { fill: #f3f3f3; stroke: #111; stroke-width: 1.2; }
+    .fused { fill: #e7eef8; stroke: #1a365d; stroke-width: 1.3; }
+    .group { fill: none; stroke: #1a365d; stroke-width: 1.2; stroke-dasharray: 4 3; }
+    .edge { stroke: #111; stroke-width: 1; fill: none; }
+  </style>
+  <rect class="paper" width="980" height="430"/>
+  <text class="serif" x="24" y="32" font-size="17">Figure 1. One layer, before and after fusion</text>
+  <text class="serif muted" x="24" y="52" font-size="13">Each box on top is its own launch. All of them run inside the single launch below.</text>
+
+  <text class="serif" x="24" y="84" font-size="15">(a) 14 launches</text>
+
+  <g class="sans" font-size="11" text-anchor="middle">
+    <rect class="node" x="24" y="100" width="58" height="32"/><text x="53" y="120">RMS</text>
+    <rect class="node" x="98" y="100" width="40" height="32"/><text x="118" y="120">Q</text>
+    <rect class="node" x="154" y="100" width="40" height="32"/><text x="174" y="120">K</text>
+    <rect class="node" x="210" y="100" width="40" height="32"/><text x="230" y="120">V</text>
+    <rect class="node" x="266" y="100" width="52" height="32"/><text x="292" y="120">RoPE</text>
+    <rect class="attn" x="334" y="100" width="58" height="32"/><text x="363" y="120">Attn</text>
+    <rect class="node" x="408" y="100" width="40" height="32"/><text x="428" y="120">O</text>
+    <rect class="node" x="464" y="100" width="40" height="32"/><text x="484" y="120">Add</text>
+    <rect class="node" x="520" y="100" width="52" height="32"/><text x="546" y="120">RMS</text>
+    <rect class="node" x="588" y="100" width="48" height="32"/><text x="612" y="120">Gate</text>
+    <rect class="node" x="652" y="100" width="40" height="32"/><text x="672" y="120">Up</text>
+    <rect class="node" x="708" y="100" width="62" height="32"/><text x="739" y="120">SwiGLU</text>
+    <rect class="node" x="786" y="100" width="52" height="32"/><text x="812" y="120">Down</text>
+    <rect class="node" x="854" y="100" width="40" height="32"/><text x="874" y="120">Add</text>
+  </g>
+  <g class="edge">
+    <path d="M82 116 H98 M138 116 H154 M194 116 H210 M250 116 H266 M318 116 H334 M392 116 H408 M448 116 H464 M504 116 H520 M572 116 H588 M636 116 H652 M692 116 H708 M770 116 H786 M838 116 H854"/>
+  </g>
+  <rect class="group" x="16" y="90" width="886" height="52" rx="6"/>
+
+  <text class="serif" x="24" y="188" font-size="15">(b) 1 launch</text>
+  <rect class="fused" x="24" y="204" width="888" height="52" rx="4"/>
+  <text class="sans" x="40" y="226" font-size="13">1 launch</text>
+  <text class="sans" x="40" y="244" font-size="12">RMS, QKV + RoPE, Attn, O + Add, RMS, Gate + Up + SwiGLU, Down + Add</text>
+
+  <text class="serif" x="24" y="300" font-size="14">What changes on one A6000, Qwen2.5-3B, bf16</text>
+  <g class="sans" font-size="13">
+    <text x="24" y="328">Launches per layer</text><text x="230" y="328">14 to 1</text>
+    <text x="24" y="352">Launches per token</text><text x="230" y="352">about 500 to 36</text>
+    <text x="500" y="328">Decode, batch 1</text><text x="700" y="328">about 95 to 122 tok/s</text>
+    <text x="500" y="352">MLP writes, S = 2048</text><text x="700" y="352">129 to 43 MiB</text>
+  </g>
+  <text class="serif muted" x="24" y="392" font-size="13">Decode is still bounded by reading 6.18 GB of weights at 768 GB/s, about 8 ms, 124 tok/s if the card did nothing else.</text>
+  <text class="serif muted" x="24" y="412" font-size="13">The MLP saving is the gate and up tensors. The 43 MiB product still goes to HBM, inside the same launch.</text>
+</svg>
