@@ -1,6 +1,6 @@
 ---
 title: "The HAL You Can Compile Twice"
-date: 2026-09-14
+date: 2025-04-09
 draft: false
 categories: ["Embedded", "C++"]
 tags: ["C++20", "concepts", "STM32", "testing"]

@@ -51,7 +51,7 @@ url = "posts"
 
 [[params.profileMode.buttons]]
 name = "CV"
-url = "resume"
+url = "cv"
 
 # Social links
 [[params.socialIcons]]
@@ -88,8 +88,8 @@ url = "/posts"
 weight = 2
 
 [[menu.main]]
-name = "Resume"
-url = "/resume"
+name = "CV"
+url = "/cv/"
 weight = 3
 
 [markup.goldmark.renderer]

@@ -1,80 +1,133 @@
 ---
-title: "A Mega-Kernel Is a Schedule, Not a Bigger Kernel"
-date: 2026-10-03
+title: "Hand-fusing Qwen2.5-3B on an A6000"
+date: 2025-11-18
 draft: false
 categories: ["Systems", "GPU"]
-tags: ["Qwen", "CUDA", "inference", "compilers"]
-summary: "Fusing a transformer block by hand teaches you where kernel boundaries hurt, and also why that is not the same thing as the persistent mega-kernel in MPK."
-description: "What hand-fusing a Qwen block actually buys, and how Mirage Persistent Kernel turns the same complaint into an SM-level schedule."
+tags: ["Qwen", "Triton", "A6000", "inference"]
+summary: "Which launches in a Qwen2.5-3B layer I fused by hand, what that is worth on an A6000, and why that is a different object from the mega-kernel in the MPK talk."
+description: "A reconstructed account of hand-fusing a Qwen2.5-3B block in Triton, with A6000 estimates derived from the public config."
 ---
 
-For a while I used the word "mega-kernel" to mean something modest. I had fused the pieces of a Qwen transformer block so that intermediate values stayed in registers and shared memory. They no longer went out to global memory and came back. I called the result a mega-kernel because it was larger than what I started with. I think that usage is wrong, because it hides a distinction that matters. An earlier version of this page made it worse. It described one Triton function that inlined LayerNorm, attention, and the MLP, and it carried a throughput table that I never measured. I have removed both.
+I no longer have the project tree or the Nsight report from when I hand-fused a Qwen2.5-3B layer in Triton on an RTX A6000. Everything below is reconstructed from memory and from the public model config. The tokens/sec figures are arithmetic. I did not measure any of them, and you should not read them as benchmark results.
 
-I fused CUDA and Triton kernels for Qwen transformer blocks and profiled them on an NVIDIA A6000 with Nsight Compute. Achieved memory bandwidth rose by 30%. I have no tokens per second, latency figure, or batch-size sweep to give you.
+The A6000 has 48 GB of memory, 84 SMs and 768 GB/s of bandwidth. Qwen2.5-3B fits easily. At batch 1, decoding on this card is a bandwidth problem, and that decides how much fusion can help.
 
-## Fusion only removes round trips
+## What one layer launches
 
-A transformer block, written the ordinary way, is a chain of memory-heavy kernels. Each kernel reads a tile from global memory, does a small amount of arithmetic, and writes the tile back. The next kernel reads it again. Folding LayerNorm into the projection that follows it, or folding the residual add into the epilogue of the matmul that produces its input, removes some of those round trips. The data is already on the chip, so it stays there.
+The config: 36 layers, hidden size 2048, intermediate size 11008, 16 query heads, 2 KV heads, head dim 128, vocab 151936, tied embeddings, bf16, RoPE, SwiGLU, RMSNorm. That is 3.09B parameters, about 6.18 GB in bf16.
 
-An increase in achieved bandwidth in the profiler is consistent with that story. The chip is spending more of its memory effort on traffic the counter credits as useful, and less of its time stalled between launches. I did not keep a screenshot of the counter breakdown. A 30% change on a bandwidth counter is a real effect and also a narrow one. It does not say the model got 30% faster end to end.
+Per layer, the weights read in bf16 are:
 
-The more important limitation is structural. I still had a kernel boundary around the fused region. The kernel after it still waited for every block of mine to finish before it could start. I had also not overlapped the matmul with a collective, because I was not writing a collective at all. A single-GPU fusion experiment cannot see that problem.
+- Q: 8 MiB
+- K: 1 MiB
+- V: 1 MiB
+- O: 8 MiB
+- gate: 43 MiB
+- up: 43 MiB
+- down: 43 MiB
 
-## The leftover cost is the kernel barrier
+That is about 147 MiB per layer, or about 5.2 GiB over 36 layers. The tied embedding matrix adds about 0.6 GiB, and it doubles as the LM head.
 
-The paper I have been reading is "MPK: A Compiler and Runtime for Mega-Kernelizing Tensor Programs" by Cheng et al. ([arXiv:2512.22219](https://arxiv.org/html/2512.22219), code in the [Mirage repository](https://github.com/mirage-project/mirage)). I did not build MPK and I did not reproduce any of its results. I am reading it because it is the careful version of an idea I had been using loosely.
+Reading 6.18 GB at 768 GB/s takes 8.0 ms, which is about 124 tokens/s if nothing else costs time. At batch 1 with one token, activations are kilobytes. Next to the weights they do not matter.
 
-Its starting point is the way a conventional stack launches one kernel per operator. Between two such kernels the GPU inserts a barrier: the thread blocks of the next kernel wait until every block of the previous kernel has finished. The paper points out two things that this prevents. It blocks software pipelining across operators, and it blocks fine-grained overlap of compute and communication.
+The unfused eager list I started from, per layer:
 
-Their example is a matmul followed by an AllGather or AllReduce. The communication step only needs the output tile it is about to send, but the kernel barrier makes it wait for the whole matmul. The waste is not only the launch. The fastest SM goes idle until the slowest SM reaches the barrier, and the consumer cannot touch a tile that is already sitting in memory.
+1. RMSNorm
+2. Q
+3. K
+4. V
+5. RoPE
+6. attention
+7. O
+8. residual add
+9. RMSNorm
+10. gate
+11. up
+12. SwiGLU (silu, then multiply)
+13. down
+14. residual add
+
+That is about 14 launches a layer and about 500 per token. I will take 5 microseconds as a round cost per eager launch on this generation of GPU. That number is an assumption. I did not measure it on my machine. With it, 500 launches cost 2.5 ms per token.
+
+## What I fused
+
+I wrote everything in Triton, for one GPU, with no collectives. The groups:
+
+1. Residual add and RMSNorm as one small kernel.
+2. Q, K and V as one GEMM, with the three weight matrices concatenated. RoPE went into the epilogue when a tile held a full head pair. Otherwise RoPE stayed a second kernel. This one was often separate, so the count below is a best case.
+3. Attention, left alone. FlashAttention is already a fused algorithm, and it does not drop into a GEMM epilogue.
+4. O projection, with the residual add in the epilogue.
+5. Residual add and RMSNorm again.
+6. Gate and up as one GEMM, with SwiGLU in the epilogue: `silu(gate) * up`. Those two intermediate tensors never go back to HBM.
+7. Down projection, with the residual add in the epilogue.
 
 <figure>
-  <img src="/images/mpk-schedule.svg" alt="Two timelines. On the left, a gold barrier holds every all-reduce block until the slowest matmul block finishes. On the right, each all-reduce task starts when its own matmul tile is done.">
-  <figcaption>A kernel barrier waits for the slowest tile. An SM-level schedule lets a finished tile proceed into the collective. This is the picture in MPK's comparison of kernel barriers with fine-grained overlap; the drawing is mine.</figcaption>
+  <img src="/images/qwen-layer-fusion.svg" alt="Two panels. Panel a lists separate Qwen layer launches and the activation mebibytes each writes. Panel b groups them into seven kernels, with attention left alone.">
+  <figcaption>One Qwen2.5-3B layer at prefill length 2048, bf16. The sizes are activation writes. Weights are extra, and they dominate decode.</figcaption>
 </figure>
 
-The existing remedies are partial. CUDA Graphs cut launch overhead, but they replay a captured sequence of kernels, so they stay coarse. A change in shape or control flow means recapturing. Programmatic Dependent Launch can overlap kernels to some extent. The paper says plainly that using it takes real engineering, because it changes control flow. Neither changes the fact that the unit of synchronization is a whole kernel.
+That is 7 launches a layer, about 250 per token.
 
-## Is one big Triton kernel a mega-kernel?
+The gate and up kernel did the most useful work, so here is a sketch of it. I reconstructed it from memory. It is not the lost source. Gate and up weights are stored side by side, and the product is the only store.
 
-The picture I started with, a single function that contains the whole model, does not fit in registers. If you try to get around that with persistent threads that manually pull the next operator off some list, you have written a runtime. It is probably a bad scheduler. The cost of attention depends on sequence length, so a schedule fixed at fuse time freezes a launch geometry the workload will not respect.
+```python
+# Sketch. Gate and up are stored side by side. The product is the only store.
+@triton.jit
+def gate_up_swiglu(x_ptr, w_ptr, out_ptr, M, N, K,
+                   stride_xm, stride_xk, stride_wk, stride_wn,
+                   BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr):
+    pid_m = tl.program_id(0)
+    pid_n = tl.program_id(1)
+    offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    offs_k = tl.arange(0, BLOCK_K)
+    acc_g = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+    acc_u = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+    for k in range(0, K, BLOCK_K):
+        a = tl.load(x_ptr + offs_m[:, None] * stride_xm + (k + offs_k)[None, :] * stride_xk,
+                    mask=(offs_m[:, None] < M) & ((k + offs_k)[None, :] < K), other=0.0)
+        wg = tl.load(w_ptr + (k + offs_k)[:, None] * stride_wk + offs_n[None, :] * stride_wn,
+                     mask=((k + offs_k)[:, None] < K) & (offs_n[None, :] < N), other=0.0)
+        wu = tl.load(w_ptr + (k + offs_k)[:, None] * stride_wk + (N + offs_n)[None, :] * stride_wn,
+                     mask=((k + offs_k)[:, None] < K) & (offs_n[None, :] < N), other=0.0)
+        acc_g += tl.dot(a, wg)
+        acc_u += tl.dot(a, wu)
+    # SiLU(gate) * up. Nothing else is stored.
+    out = (acc_g * tl.sigmoid(acc_g)) * acc_u
+    tl.store(out_ptr + offs_m[:, None] * N + offs_n[None, :],
+             out, mask=(offs_m[:, None] < M) & (offs_n[None, :] < N))
+```
 
-A mega-kernel in the paper's sense is also called a persistent kernel. It launches once and runs the model's compute and communication inside that single launch. Hand-written ones exist. The paper cites FlashDMoE. It also cites a low-latency Llama-1B kernel from Spector et al. at Hazy Research. The paper's observation is that Triton, PyTorch, and TVM do not, by themselves, compile a whole model into one. MPK describes itself as the first compiler and runtime that automatically turns multi-GPU inference into one mega-kernel, and I am repeating that as their claim, not mine.
+Each program keeps two accumulators in registers and loads the gate and up weight tiles for the same output columns. After the K loop, the SwiGLU is a few elementwise operations on data that is already on chip.
 
-What MPK does is not paste the model into one function. It admits that a scheduler is needed and builds one on purpose.
+## What that is worth on an A6000
 
-## The unit is a task, not an operator
+Decode first. Unfused, the weights take 8.0 ms and the launches take about 2.5 ms, so about 10.5 ms per token. That is roughly 95 tokens/s, before any other stalls. Fused, it is 8.0 ms plus about 1.3 ms of launches, so about 9.3 ms, or roughly 108 tokens/s. This is an estimate built on the 5 microsecond assumption. If the real launch cost was lower, the gap is smaller. If launches were also leaving gaps between kernels, the gap is larger. I can't say which, because the profile is gone.
 
-MPK lowers the model to what it calls a tGraph. The nodes are of two kinds: tasks, each of which runs on a single SM, and events, which synchronize tasks. The edges are tile-level dependencies, and tasks and events alternate. A task becomes ready when the events it depends on have fired, and it triggers its own event when it finishes.
+The decode gain is modest. The 8.0 ms of weight reads is the same in both cases, and no amount of fusion in this layout removes it.
 
-The compiler builds this graph in a few steps.
+The prefill case is more interesting, and the saving there is activation traffic in the MLP. Take S=2048 in bf16. The activation sizes are:
 
-First, each operator is decomposed into tasks by tiling its output. Second, an event is inserted between two tasks only when the producer's output region overlaps the consumer's input region. That is the step that lets a finished matmul tile go straight to the collective, and it is where the barrier in the figure disappears.
+| Tensor | Size |
+| --- | --- |
+| hidden | 8.0 MiB |
+| Q | 8.0 MiB |
+| K | 1.0 MiB |
+| V | 1.0 MiB |
+| attention out | 8.0 MiB |
+| gate | 43 MiB |
+| up | 43 MiB |
+| SwiGLU product | 43 MiB |
+| down output | 8.0 MiB |
 
-Third, events are fused. Suppose two events both gate the same output-projection task. They have the same set of successors, so they can be replaced by one event. This is successor-set fusion. Suppose instead that two events are triggered by the same set of attention tasks. They have the same set of predecessors, so they can likewise become one event. This is predecessor-set fusion.
+Unfused, the gate, up and product writes come to about 129 MiB per layer. With the fused epilogue, only the 43 MiB product is written, and the down GEMM reads it. Shared memory cannot hold 43 MiB, so the product still lands in HBM. The saving is the gate and up tensors, about 86 MiB of writes per layer. Each of those tensors would also have been read back, so the read traffic drops as well.
 
-Fourth, the graph is normalized so that each task has at most one dependent event and one triggering event. The compiler arranges this by inserting empty tasks where needed. Fifth, the tasks are linearized so that the set of tasks an event launches is a contiguous range of indices. The reason is the device representation: it stores a first and a last index per event instead of a variable-length list. The empty tasks are a cost the compiler pays on purpose, so that the hot path on the GPU does not chase pointers.
+I am not giving a prefill tokens/s number. I never recorded one that I can trust, and deriving one from this table would be invention. What I can say is that the MLP is where the large activation tensors are, and the gate and up fusion removes two of the three.
 
-The paper reports the scale of this for Qwen3-8B. The 293 operators become 13,867 tasks, which is about 47 tasks per operator. Event fusion reduces the event count by 68 times on that model, and linearization shrinks the successor encoding by 5.9 times, from 110,932 bytes to 18,928 bytes.
+## The talk uses the word differently
 
-Per-task CUDA code comes from the Mirage superoptimizer at thread-block granularity, communication goes through NVSHMEM, and a user can wrap a hand-tuned kernel as a task while the schedule stays the same.
+For a while I called these fused functions mega-kernels. I stopped after watching the GPU MODE talk by Mengdi Wu and Xinhao Cheng, ["Mirage (MPK): Compiling LLMs into Mega Kernels"](https://www.youtube.com/watch?v=_EbQwE5mDFY). The paper is Cheng et al., ["MPK: A Compiler and Runtime for Mega-Kernelizing Tensor Programs"](https://arxiv.org/html/2512.22219).
 
-## The scheduler sits inside the kernel
+Their object is one persistent launch for the whole model. Work is split into tasks that each occupy one SM, and a finished tile can enter the next operator before the other SMs have finished the current kernel. My version still has a kernel boundary around attention and around each GEMM group. Every one of those boundaries is a point where all SMs finish before the next kernel starts. I was also on one A6000, so there was no all-reduce for a finished tile to enter.
 
-At run time there is one persistent kernel. Its SMs are split into workers and schedulers. Workers have queues and execute tasks, and schedulers are warps that watch for events. On an A100 the paper keeps 104 SMs as workers and uses the other four SMs for 16 scheduler warps, four warps on each. The in-kernel scheduler accounts for 0.28% of runtime.
-
-Not every task is launched the same way. Attention is data-dependent, so those tasks are dispatched just in time, after their event fires. This lets the runtime rebalance load. Operators whose cost is stable are enqueued ahead of time, which saves a trip through the scheduler. When both kinds are ready, the just-in-time tasks are preferred. The unbalanced part is scheduled dynamically and the rest statically.
-
-Shared memory is paged, so the next task can prefetch into a free page while the current task is still computing. The awkward leftover, which the paper acknowledges, is the register file. The per-thread register budget of the whole kernel is the maximum over all task types. Shared memory, by contrast, is time-multiplexed.
-
-## A bandwidth counter is not a serving number
-
-The paper evaluates offline batched inference, in bfloat16, on models from Qwen3-0.6B to Qwen3-30B-A3B, on A100, H100, and B200, with vLLM and SGLang as baselines. In the single-batch setting, the speedup over those systems is between 1.0 and 1.7 times, larger on smaller models and on newer GPUs.
-
-Take Qwen3-8B on an A100. Per-token decode goes from 14.5 ms with vLLM and SGLang to 12.5 ms with MPK. The authors estimate a rough hardware floor of about 10 ms, which is what it takes to load 16 GB of parameters at 1.6 TB/s. So the remaining gap to the bandwidth bound is small. On launch overhead, they count 293 kernel launches per token for Qwen3-8B in a kernel-per-operator run. On a B200 they measure about 3.8 μs per eager launch, roughly 1.1 ms per token. With CUDA Graphs it is about 0.8 μs, roughly 0.2 ms. Fine-grained compute-communication overlap on Qwen3-1.7B across four H100s gives about 1.1 times lower latency.
-
-The 30% bandwidth counter from one A6000 is not the same kind of result as these end-to-end latencies against vLLM and SGLang, and the two should not be read as comparable magnitudes.
-
-## The schedule is the program
-
-I think a mega-kernel is worth wanting because it deletes a barrier the programming model inserts. The schedule inside it can then see tile dependencies that a kernel launch has no way to name.
+I did not build or run MPK. This is a comparison of what the two things are, and it says nothing about how fast either one runs.
