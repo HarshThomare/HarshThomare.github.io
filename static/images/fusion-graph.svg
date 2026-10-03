@@ -48,7 +48,7 @@
   <g class="sans" font-size="13">
     <text x="24" y="328">Launches per layer</text><text x="230" y="328">14 to 1</text>
     <text x="24" y="352">Launches per token</text><text x="230" y="352">about 500 to 36</text>
-    <text x="500" y="328">Decode, batch 1</text><text x="700" y="328">about 95 to 122 tok/s</text>
+    <text x="500" y="328">Decode, batch 1</text><text x="700" y="328">95 to 113 tok/s</text>
     <text x="500" y="352">MLP writes, S = 2048</text><text x="700" y="352">129 to 43 MiB</text>
   </g>
   <text class="serif muted" x="24" y="392" font-size="13">Decode is still bounded by reading 6.18 GB of weights at 768 GB/s, about 8 ms, 124 tok/s if the card did nothing else.</text>

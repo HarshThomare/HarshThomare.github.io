@@ -32,7 +32,7 @@ Here is what the fusion bought.
 
 Launches per layer went from 14 to 1. Across 36 layers, that is about 500 launches per token down to 36.
 
-Decode at batch 1 went from about 95 tok/s to about 122 tok/s. Each token still has to read 6.18 GB of weights, and the A6000 reads at 768 GB/s. That read takes 8 ms, which is about 124 tok/s if nothing else costs time. One launch per layer removes most of the launch time. It does not remove the weight read.
+Decode at batch 1 went from 95 tok/s to 113 tok/s. Each token still has to read 6.18 GB of weights, and the A6000 reads at 768 GB/s. That read takes 8 ms, which is 124 tok/s if nothing else costs time. One launch per layer removes most of the launch time. It does not remove the weight read.
 
 Prefill at length 2048 shows a different effect. The MLP used to write the gate output, the up output, and their product, which is 129 MiB. Now it writes only the product, 43 MiB. Gate and up stay on chip.
 
@@ -130,7 +130,7 @@ Each program keeps two accumulators in registers and loads the gate and up weigh
 
 ## What that is worth on an A6000
 
-Decode first. Unfused, the weights take 8.0 ms and about 500 launches take 2.5 ms, so about 10.5 ms per token, roughly 95 tokens/s. With one launch per layer, 36 launches are about 0.2 ms, so the token is about 8.2 ms, roughly 122 tokens/s. The 2.5 ms is 500 launches at about 5 microseconds each.
+Decode first. Unfused, the run is 95 tok/s. With one launch per layer it is 113 tok/s. The weight read is still 8.0 ms, and that is the part the fusion does not remove.
 
 The decode gain is modest. The 8.0 ms of weight reads is the same in both cases, and no amount of fusion in this layout removes it.
 
